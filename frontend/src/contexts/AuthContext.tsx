@@ -2,10 +2,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import api from '../utils/api';
 import type { User } from '../types';
 
+interface LoginResult {
+  requires_otp?: boolean;
+  temp_token?: string;
+  user_name?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginResult | undefined>;
+  verifyOtp: (tempToken: string, otpCode: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
   isSuperAdmin: boolean;
@@ -38,8 +45,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [token, logout]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<LoginResult | undefined> => {
     const res = await api.post('/auth/login', { email, password });
+    if (res.data.requires_otp) {
+      return { requires_otp: true, temp_token: res.data.temp_token, user_name: res.data.user_name };
+    }
+    const { token: t, user: u } = res.data;
+    localStorage.setItem('rms_token', t);
+    setToken(t);
+    setUser(u);
+    return undefined;
+  };
+
+  const verifyOtp = async (tempToken: string, otpCode: string) => {
+    const res = await api.post('/auth/verify-otp-login', { temp_token: tempToken, otp_code: otpCode });
     const { token: t, user: u } = res.data;
     localStorage.setItem('rms_token', t);
     setToken(t);
@@ -52,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canManageBranch = isAdmin;
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading, isSuperAdmin, isAdmin, isManager, canManageBranch }}>
+    <AuthContext.Provider value={{ user, token, login, verifyOtp, logout, isLoading, isSuperAdmin, isAdmin, isManager, canManageBranch }}>
       {children}
     </AuthContext.Provider>
   );

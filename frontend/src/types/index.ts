@@ -26,6 +26,7 @@ export interface User {
   branch_name?: string;
   permissions: string[];
   status: 'active' | 'inactive';
+  otp_enabled?: number;
   last_login?: string;
   created_at: string;
 }
