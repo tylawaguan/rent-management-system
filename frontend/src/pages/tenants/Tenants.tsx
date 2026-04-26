@@ -1,21 +1,23 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { UserCheck, Plus, Edit, Eye, Search, Phone, DoorOpen } from 'lucide-react';
+import { UserCheck, Plus, Edit, Eye, Search, Phone, DoorOpen, UserX } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/format';
 import Modal from '../../components/common/Modal';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 import TenantForm from './TenantForm';
 import TenantDetail from './TenantDetail';
 import type { Tenant } from '../../types';
 
 export default function Tenants() {
   const qc = useQueryClient();
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, isAdmin } = useAuth();
   const [modal, setModal] = useState<'create' | 'edit' | 'view' | null>(null);
   const [selected, setSelected] = useState<Tenant | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
 
@@ -34,6 +36,12 @@ export default function Tenants() {
     mutationFn: (data: any) => selected && modal === 'edit' ? api.put(`/tenants/${selected.id}`, data) : api.post('/tenants', data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tenants'] }); toast.success(modal === 'edit' ? 'Tenant updated' : 'Tenant added'); setModal(null); },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Error saving tenant'),
+  });
+
+  const deleteTenant = useMutation({
+    mutationFn: (id: string) => api.delete(`/tenants/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tenants'] }); toast.success('Tenant deactivated'); setDeleteId(null); },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Error deactivating tenant'),
   });
 
   const filtered = tenants.filter(t =>
@@ -105,6 +113,9 @@ export default function Tenants() {
                     <div className="flex gap-1">
                       <button onClick={() => { setSelected(t); setModal('view'); }} className="btn-secondary btn-sm"><Eye className="w-3 h-3" /></button>
                       <button onClick={() => { setSelected(t); setModal('edit'); }} className="btn-secondary btn-sm"><Edit className="w-3 h-3" /></button>
+                      {isAdmin && (
+                        <button onClick={() => setDeleteId(t.id)} className="btn-danger btn-sm" title="Deactivate tenant"><UserX className="w-3 h-3" /></button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -133,6 +144,12 @@ export default function Tenants() {
       <Modal isOpen={modal === 'view'} onClose={() => setModal(null)} title="Tenant Details" size="xl">
         {tenantDetail && <TenantDetail tenant={tenantDetail} onEdit={() => setModal('edit')} />}
       </Modal>
+
+      <ConfirmDialog isOpen={!!deleteId} onClose={() => setDeleteId(null)}
+        onConfirm={() => deleteId && deleteTenant.mutate(deleteId)}
+        title="Deactivate Tenant"
+        message="This tenant will be marked as inactive and their room will be freed. You can reactivate them later by editing their status."
+        confirmLabel="Deactivate" isLoading={deleteTenant.isPending} />
     </div>
   );
 }
