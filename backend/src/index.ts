@@ -46,6 +46,13 @@ app.use('/api/settings', settingsRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() }));
 
+// Serve React frontend in production
+const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+if (require('fs').existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (_req, res) => res.sendFile(path.join(frontendDist, 'index.html')));
+}
+
 // Daily cron: mark overdue payments and send reminders
 cron.schedule('0 8 * * *', async () => {
   try {
