@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
-import { getDb } from './database/db';
+import { initDb, query, queryOne, run } from './database/db';
 import { v4 as uuidv4 } from 'uuid';
 
 import authRoutes from './routes/auth';
@@ -22,10 +22,10 @@ import settingsRoutes from './routes/settings';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5001'], credentials: true }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000'], credentials: true }));
 app.use('/uploads', express.static(path.resolve('./uploads')));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -44,60 +44,71 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/settings', settingsRoutes);
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() }));
 
 // Daily cron: mark overdue payments and send reminders
-cron.schedule('0 8 * * *', () => {
+cron.schedule('0 8 * * *', async () => {
   try {
-    const db = getDb();
-    const today = new Date().toISOString().split('T')[0];
-    const settings = db.prepare('SELECT value FROM system_settings WHERE key=?').get('penalty_grace_days') as any;
-    const graceDays = parseInt(settings?.value || '5');
+    const graceSetting = await queryOne<any>('SELECT value FROM system_settings WHERE `key` = ?', ['penalty_grace_days']);
+    const graceDays = parseInt(graceSetting?.value || '5');
     const graceDate = new Date();
     graceDate.setDate(graceDate.getDate() - graceDays);
     const graceDateStr = graceDate.toISOString().split('T')[0];
 
-    // Mark overdue after grace period
-    const overdueResult = db.prepare(`
-      UPDATE payments SET status='overdue', updated_at=datetime('now')
-      WHERE status='pending' AND due_date < ? AND payment_type='rent'
-    `).run(graceDateStr);
+    const overdueResult = await run(
+      "UPDATE payments SET status = 'overdue' WHERE status = 'pending' AND due_date < ? AND payment_type = 'rent'",
+      [graceDateStr]
+    );
 
-    // Reminders for upcoming due dates
-    const reminderSettings = db.prepare('SELECT value FROM system_settings WHERE key=?').get('reminder_days_before') as any;
-    const reminderDays = parseInt(reminderSettings?.value || '3');
+    const reminderSetting = await queryOne<any>('SELECT value FROM system_settings WHERE `key` = ?', ['reminder_days_before']);
+    const reminderDays = parseInt(reminderSetting?.value || '3');
     const reminderDate = new Date();
     reminderDate.setDate(reminderDate.getDate() + reminderDays);
     const reminderStr = reminderDate.toISOString().split('T')[0];
 
-    const upcoming = db.prepare(`
+    const upcoming = await query<any>(`
       SELECT p.tenant_id, p.branch_id, p.month_year, p.amount_due,
-      t.first_name || ' ' || t.last_name as name
-      FROM payments p JOIN tenants t ON p.tenant_id=t.id
-      WHERE p.status='pending' AND p.due_date=? AND p.payment_type='rent'
-    `).all(reminderStr) as any[];
+        CONCAT(t.first_name, ' ', t.last_name) as name
+      FROM payments p JOIN tenants t ON p.tenant_id = t.id
+      WHERE p.status = 'pending' AND p.due_date = ? AND p.payment_type = 'rent'
+    `, [reminderStr]);
 
     for (const p of upcoming) {
-      const exists = db.prepare(`SELECT id FROM notifications WHERE tenant_id=? AND type='reminder' AND title LIKE ?`).get(p.tenant_id, `%${p.month_year}%`);
+      const exists = await queryOne(
+        "SELECT id FROM notifications WHERE tenant_id = ? AND type = 'reminder'",
+        [p.tenant_id]
+      );
       if (!exists) {
-        db.prepare(`INSERT INTO notifications (id, tenant_id, branch_id, type, title, message) VALUES (?, ?, ?, ?, ?, ?)`).run(
-          uuidv4(), p.tenant_id, p.branch_id, 'reminder',
-          `Rent Reminder - ${p.month_year}`,
-          `Dear ${p.name}, your rent of ${p.amount_due.toLocaleString()} RWF for ${p.month_year} is due in ${reminderDays} days.`
+        await run(
+          'INSERT INTO notifications (id, tenant_id, branch_id, type, title, message) VALUES (?, ?, ?, ?, ?, ?)',
+          [uuidv4(), p.tenant_id, p.branch_id, 'reminder',
+            `Rent Reminder - ${p.month_year}`,
+            `Dear ${p.name}, your rent of ${p.amount_due.toLocaleString()} RWF for ${p.month_year} is due in ${reminderDays} days.`]
         );
       }
     }
 
-    console.log(`[CRON] Marked ${overdueResult.changes} payments as overdue, sent ${upcoming.length} reminders`);
+    console.log(`[CRON] Marked ${overdueResult.affectedRows} payments as overdue, checked ${upcoming.length} reminders`);
   } catch (e) {
     console.error('[CRON] Error:', e);
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🏢 RENT MANAGEMENT SYSTEM - API Server`);
-  console.log(`✅ Running on http://localhost:${PORT}`);
-  console.log(`📊 API health: http://localhost:${PORT}/api/health\n`);
-});
+async function start() {
+  try {
+    await initDb();
+    console.log('✅ Database connected and schema ready');
+    app.listen(PORT, () => {
+      console.log(`\n🏢 RENT MANAGEMENT SYSTEM - API Server`);
+      console.log(`✅ Running on http://localhost:${PORT}`);
+      console.log(`📊 API health: http://localhost:${PORT}/api/health\n`);
+    });
+  } catch (e) {
+    console.error('❌ Failed to start server:', e);
+    process.exit(1);
+  }
+}
+
+start();
 
 export default app;

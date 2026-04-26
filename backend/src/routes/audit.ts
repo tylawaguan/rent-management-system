@@ -1,37 +1,44 @@
 import { Router, Request, Response } from 'express';
-import { getDb } from '../database/db';
+import { query, queryOne } from '../database/db';
 import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate, authorize('super_admin', 'admin'));
 
-router.get('/', (req: Request, res: Response) => {
-  const db = getDb();
-  const { branch_id, user_id, action, entity_type, from_date, to_date, page = '1', limit = '50' } = req.query;
-  const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const { branch_id, user_id, action, entity_type, from_date, to_date, page = '1', limit = '50' } = req.query;
+    const pageNum = parseInt(page as string);
+    const limitNum = parseInt(limit as string);
+    const offset = (pageNum - 1) * limitNum;
 
-  let query = `SELECT a.*, u.name as user_display FROM audit_logs a LEFT JOIN users u ON a.user_id=u.id WHERE 1=1`;
-  const params: any[] = [];
+    let sql = 'SELECT a.*, u.name as user_display FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE 1=1';
+    const params: any[] = [];
 
-  if (req.user!.role === 'admin') {
-    query += ' AND a.branch_id=?'; params.push(req.user!.branch_id);
-  } else if (branch_id) {
-    query += ' AND a.branch_id=?'; params.push(branch_id);
+    if (req.user!.role === 'admin') {
+      sql += ' AND a.branch_id = ?'; params.push(req.user!.branch_id);
+    } else if (branch_id) {
+      sql += ' AND a.branch_id = ?'; params.push(branch_id);
+    }
+    if (user_id) { sql += ' AND a.user_id = ?'; params.push(user_id); }
+    if (action) { sql += ' AND a.action LIKE ?'; params.push(`%${action}%`); }
+    if (entity_type) { sql += ' AND a.entity_type = ?'; params.push(entity_type); }
+    if (from_date) { sql += ' AND a.created_at >= ?'; params.push(from_date); }
+    if (to_date) { sql += ' AND a.created_at <= ?'; params.push(`${to_date} 23:59:59`); }
+
+    const countResult = await queryOne<any>(`SELECT COUNT(*) as c FROM (${sql}) sub`, params);
+    const total = countResult?.c ?? 0;
+
+    sql += ' ORDER BY a.created_at DESC LIMIT ? OFFSET ?';
+    params.push(limitNum, offset);
+
+    res.json({
+      data: await query(sql, params),
+      pagination: { page: pageNum, limit: limitNum, total, pages: Math.ceil(total / limitNum) },
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Server error' });
   }
-  if (user_id) { query += ' AND a.user_id=?'; params.push(user_id); }
-  if (action) { query += ' AND a.action LIKE ?'; params.push(`%${action}%`); }
-  if (entity_type) { query += ' AND a.entity_type=?'; params.push(entity_type); }
-  if (from_date) { query += ' AND a.created_at >= ?'; params.push(from_date); }
-  if (to_date) { query += ' AND a.created_at <= ?'; params.push(`${to_date} 23:59:59`); }
-
-  const total = (db.prepare(`SELECT COUNT(*) as c FROM (${query})`).get(...params) as any).c;
-  query += ` ORDER BY a.created_at DESC LIMIT ? OFFSET ?`;
-  params.push(parseInt(limit as string), offset);
-
-  res.json({
-    data: db.prepare(query).all(...params),
-    pagination: { page: parseInt(page as string), limit: parseInt(limit as string), total, pages: Math.ceil(total / parseInt(limit as string)) },
-  });
 });
 
 export default router;

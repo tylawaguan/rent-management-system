@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { getDb } from '../database/db';
+import { queryOne } from '../database/db';
 
 export interface AuthUser {
   id: string;
@@ -19,14 +19,16 @@ declare global {
   }
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as AuthUser;
-    const db = getDb();
-    const user = db.prepare('SELECT id, name, email, role, branch_id, permissions, status FROM users WHERE id = ?').get(decoded.id) as any;
+    const user = await queryOne<any>(
+      'SELECT id, name, email, role, branch_id, permissions, status FROM users WHERE id = ?',
+      [decoded.id]
+    );
     if (!user || user.status !== 'active') return res.status(401).json({ error: 'User not found or inactive' });
     req.user = { ...user, permissions: JSON.parse(user.permissions || '[]') };
     next();

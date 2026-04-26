@@ -19,7 +19,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function Rooms() {
   const qc = useQueryClient();
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, user: me } = useAuth();
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
   const [selected, setSelected] = useState<Room | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export default function Rooms() {
     onError: (e: any) => toast.error(e.response?.data?.error || 'Error deleting room'),
   });
 
-  const openCreate = () => { setSelected(null); setForm({ room_type: 'standard', floor: 1, capacity: 1, status: 'available' }); setModal('create'); };
+  const openCreate = () => { setSelected(null); setForm({ room_type: 'standard', floor: 1, capacity: 1, status: 'available', branch_id: me?.branch_id ?? undefined }); setModal('create'); };
   const openEdit = (r: Room) => { setSelected(r); setForm({ ...r }); setModal('edit'); };
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); save.mutate(form); };
 

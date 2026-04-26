@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users as UsersIcon, Plus, Edit, UserX, Search, Shield, Building2, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Users as UsersIcon, Plus, Edit, UserX, Search, Shield, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,7 +8,6 @@ import { formatDate, getRoleColor, getRoleLabel, getStatusColor } from '../../ut
 import Modal from '../../components/common/Modal';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
-import OtpSetupModal from './OtpSetupModal';
 import type { User, Branch } from '../../types';
 
 const ROLES_BY_CREATOR: Record<string, string[]> = {
@@ -19,7 +18,7 @@ const ROLES_BY_CREATOR: Record<string, string[]> = {
 export default function Users() {
   const qc = useQueryClient();
   const { user: me, isSuperAdmin } = useAuth();
-  const [modal, setModal] = useState<'create' | 'edit' | 'otp' | null>(null);
+  const [modal, setModal] = useState<'create' | 'edit' | null>(null);
   const [selected, setSelected] = useState<User | null>(null);
   const [deactivateId, setDeactivateId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -77,7 +76,7 @@ export default function Users() {
         <div className="table-container">
           <table className="table">
             <thead>
-              <tr><th>User</th><th>Role</th><th>Branch</th><th>Status</th><th>OTP</th><th>Last Login</th><th></th></tr>
+              <tr><th>User</th><th>Role</th><th>Branch</th><th>Status</th><th>Last Login</th><th></th></tr>
             </thead>
             <tbody>
               {filtered.map(u => (
@@ -101,31 +100,16 @@ export default function Users() {
                     }
                   </td>
                   <td><span className={getStatusColor(u.status)}>{u.status}</span></td>
-                  <td>
-                    {u.otp_enabled
-                      ? <span className="badge-green flex items-center gap-1 w-fit"><ShieldCheck className="w-3 h-3" />Active</span>
-                      : <span className="badge-gray flex items-center gap-1 w-fit"><ShieldOff className="w-3 h-3" />Off</span>
-                    }
-                  </td>
                   <td className="text-xs text-gray-500">{formatDate(u.last_login)}</td>
                   <td>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => { setSelected(u); setModal('otp'); }}
-                        className={`btn btn-sm ${u.otp_enabled ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
-                        title={u.otp_enabled ? 'Manage OTP' : 'Enable OTP'}
-                      >
-                        <ShieldCheck className="w-3 h-3" />
-                      </button>
-                      {u.id !== me?.id && (
-                        <>
-                          <button onClick={() => openEdit(u)} className="btn-secondary btn-sm"><Edit className="w-3 h-3" /></button>
-                          {u.role !== 'super_admin' && (
-                            <button onClick={() => setDeactivateId(u.id)} className="btn-danger btn-sm"><UserX className="w-3 h-3" /></button>
-                          )}
-                        </>
-                      )}
-                    </div>
+                    {u.id !== me?.id && (
+                      <div className="flex gap-1">
+                        <button onClick={() => openEdit(u)} className="btn-secondary btn-sm"><Edit className="w-3 h-3" /></button>
+                        {u.role !== 'super_admin' && (
+                          <button onClick={() => setDeactivateId(u.id)} className="btn-danger btn-sm"><UserX className="w-3 h-3" /></button>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -170,16 +154,6 @@ export default function Users() {
       <ConfirmDialog isOpen={!!deactivateId} onClose={() => setDeactivateId(null)} onConfirm={() => deactivateId && deactivate.mutate(deactivateId)}
         title="Deactivate User" message="This user will no longer be able to log in. You can reactivate them later."
         confirmLabel="Deactivate" isLoading={deactivate.isPending} />
-
-      <Modal isOpen={modal === 'otp'} onClose={() => setModal(null)} title="OTP / Two-Factor Authentication">
-        {selected && (
-          <OtpSetupModal
-            user={selected}
-            onClose={() => setModal(null)}
-            onDone={() => { qc.invalidateQueries({ queryKey: ['users'] }); }}
-          />
-        )}
-      </Modal>
     </div>
   );
 }
