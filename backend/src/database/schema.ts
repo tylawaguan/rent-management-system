@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
   permissions TEXT NOT NULL DEFAULT '[]',
   status VARCHAR(20) DEFAULT 'active',
   last_login DATETIME,
+  reset_token VARCHAR(100),
+  reset_token_exp DATETIME,
   created_by VARCHAR(36),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -115,6 +115,28 @@ router.put('/:id', authorize('super_admin', 'admin'), async (req: Request, res: 
   }
 });
 
+// Admin resets password for a user in their branch
+router.post('/:id/reset-password', authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
+  try {
+    const { new_password } = req.body;
+    if (!new_password) return res.status(400).json({ error: 'new_password required' });
+    if (new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    const target = await queryOne<any>('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.role === 'super_admin') return res.status(403).json({ error: 'Cannot reset super admin password' });
+    if (req.user!.role === 'admin' && target.branch_id !== req.user!.branch_id)
+      return res.status(403).json({ error: 'Access denied' });
+
+    const hashed = await bcrypt.hash(new_password, 10);
+    await run('UPDATE users SET password = ? WHERE id = ?', [hashed, req.params.id]);
+    logAudit(req, 'RESET_USER_PASSWORD', 'user', req.params.id, { reset_by: req.user!.name });
+    res.json({ message: `Password reset for ${target.name}` });
+  } catch (e) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.delete('/:id', authorize('super_admin', 'admin'), async (req: Request, res: Response) => {
   try {
     const target = await queryOne<any>('SELECT * FROM users WHERE id = ?', [req.params.id]);

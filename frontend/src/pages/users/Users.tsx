@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users as UsersIcon, Plus, Edit, UserX, Search, Shield, Building2 } from 'lucide-react';
+import { Users as UsersIcon, Plus, Edit, UserX, Search, Shield, Building2, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,11 +18,12 @@ const ROLES_BY_CREATOR: Record<string, string[]> = {
 export default function Users() {
   const qc = useQueryClient();
   const { user: me, isSuperAdmin } = useAuth();
-  const [modal, setModal] = useState<'create' | 'edit' | null>(null);
+  const [modal, setModal] = useState<'create' | 'edit' | 'reset' | null>(null);
   const [selected, setSelected] = useState<User | null>(null);
   const [deactivateId, setDeactivateId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<any>({});
+  const [resetPw, setResetPw] = useState('');
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ['users'],
@@ -45,6 +46,13 @@ export default function Users() {
     mutationFn: (id: string) => api.delete(`/users/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('User deactivated'); setDeactivateId(null); },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Error deactivating user'),
+  });
+
+  const resetPassword = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.post(`/users/${id}/reset-password`, { new_password: password }),
+    onSuccess: () => { toast.success('Password reset successfully'); setModal(null); setResetPw(''); },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Error resetting password'),
   });
 
   const openCreate = () => { setSelected(null); setForm({ role: 'manager', status: 'active', password: '' }); setModal('create'); };
@@ -104,9 +112,10 @@ export default function Users() {
                   <td>
                     {u.id !== me?.id && (
                       <div className="flex gap-1">
-                        <button onClick={() => openEdit(u)} className="btn-secondary btn-sm"><Edit className="w-3 h-3" /></button>
+                        <button onClick={() => openEdit(u)} className="btn-secondary btn-sm" title="Edit user"><Edit className="w-3 h-3" /></button>
+                        <button onClick={() => { setSelected(u); setResetPw(''); setModal('reset'); }} className="btn-secondary btn-sm text-amber-600 border-amber-200 bg-amber-50 hover:bg-amber-100" title="Reset password"><KeyRound className="w-3 h-3" /></button>
                         {u.role !== 'super_admin' && (
-                          <button onClick={() => setDeactivateId(u.id)} className="btn-danger btn-sm"><UserX className="w-3 h-3" /></button>
+                          <button onClick={() => setDeactivateId(u.id)} className="btn-danger btn-sm" title="Deactivate"><UserX className="w-3 h-3" /></button>
                         )}
                       </div>
                     )}
@@ -154,6 +163,38 @@ export default function Users() {
       <ConfirmDialog isOpen={!!deactivateId} onClose={() => setDeactivateId(null)} onConfirm={() => deactivateId && deactivate.mutate(deactivateId)}
         title="Deactivate User" message="This user will no longer be able to log in. You can reactivate them later."
         confirmLabel="Deactivate" isLoading={deactivate.isPending} />
+
+      <Modal isOpen={modal === 'reset'} onClose={() => setModal(null)} title="Reset User Password"
+        footer={<>
+          <button onClick={() => setModal(null)} className="btn-secondary">Cancel</button>
+          <button
+            disabled={resetPw.length < 8 || resetPassword.isPending}
+            onClick={() => selected && resetPassword.mutate({ id: selected.id, password: resetPw })}
+            className="btn-primary"
+          >
+            {resetPassword.isPending ? 'Resetting...' : 'Reset Password'}
+          </button>
+        </>}>
+        {selected && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
+              <KeyRound className="w-5 h-5 text-amber-600 flex-shrink-0" />
+              <div>
+                <div className="font-medium text-gray-900">{selected.name}</div>
+                <div className="text-xs text-gray-500">{selected.email}</div>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="label">New Password *</label>
+              <input
+                type="password" value={resetPw} onChange={e => setResetPw(e.target.value)}
+                className="input" placeholder="Min 8 characters" minLength={8} autoFocus
+              />
+              <p className="text-xs text-gray-400 mt-1">The user will use this password on their next login.</p>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

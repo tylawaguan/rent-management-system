@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Home, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -62,6 +62,11 @@ export default function Login() {
             <button type="submit" disabled={loading} className="btn-primary w-full justify-center py-3 mt-2">
               {loading ? <><span className="spinner w-4 h-4" /> Signing in...</> : 'Sign In'}
             </button>
+            <div className="text-center mt-3">
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
+                Forgot your password?
+              </Link>
+            </div>
           </form>
 
           <div className="mt-6 pt-6 border-t border-gray-100">
